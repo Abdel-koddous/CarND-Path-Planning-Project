@@ -7,6 +7,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "helpers.h"
 #include "json.hpp"
+#include "spline.h"
 
 // for convenience
 using nlohmann::json;
@@ -80,6 +81,8 @@ int main() {
           // Previous path data given to the Planner
           auto previous_path_x = j[1]["previous_path_x"];
           auto previous_path_y = j[1]["previous_path_y"];
+          //std::cout << previous_path_x << std::endl;
+
           // Previous path's end s and d values 
           double end_path_s = j[1]["end_path_s"];
           double end_path_d = j[1]["end_path_d"];
@@ -97,6 +100,81 @@ int main() {
            * TODO: define a path made up of (x,y) points that the car will visit
            *   sequentially every .02 seconds
            */
+
+          // create a list of "widely" spaced (x,y) waypoints, spaced at 50m ?
+          // use a spline to interpolate these waypoints with more points to control the speed of the car.
+
+          vector<double> waypoints_x;
+          vector<double> waypoints_y;
+
+          // Use the previous path last x=2 points to start the new path
+          // The new path is to be tangent to the new path
+          // the reference point of the new path would be the last point in the previous path
+          int previous_path_size = previous_path_x.size();
+          double car_ref_x = previous_path_x[previous_path_size - 1];
+          double car_ref_y = previous_path_y[previous_path_size - 1];
+
+          double car_ref_x_prev = previous_path_x[previous_path_size - 2];
+          double car_ref_y_prev = previous_path_y[previous_path_size - 2];
+
+          double car_ref_yaw = atan2( car_ref_y - car_ref_y_prev, car_ref_x - car_ref_x_prev );
+          
+          waypoints_x.push_back( car_ref_x );
+          waypoints_y.push_back( car_ref_y );
+
+          waypoints_x.push_back( car_ref_x_prev );
+          waypoints_y.push_back( car_ref_y_prev );
+
+          // Introduce N more widely spaced points in the new path
+          int N = 3; // Number of initial widely spaced waypoints
+          double wide_dist = 50; // even distance between intial points
+
+          for ( int i = 0; i < N; ++i )
+          {
+            double next_s = car_s + ( i+1 )*wide_dist;
+            double next_d = car_d;
+            vector<double> xy = getXY( next_s, next_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            waypoints_x.push_back(xy[0]);
+            waypoints_y.push_back(xy[1]);
+          }
+          // By the end of the for loop we have 2 + 3 points in waypoints_xy
+
+
+          // Converting to car local reference
+          for( int i=0; i<waypoints_x.size(); ++i )
+          {
+            // Shift current coordinates to car_ref
+            double shift_x = waypoints_x[i] - car_ref_x;
+            double shift_y = waypoints_y[i] - car_ref_y;
+
+            // Computing coordinates in new local reference
+            waypoints_x[i] = shift_x * cos(car_ref_yaw) + shift_y * sin(car_ref_yaw);
+            waypoints_y[i] = -shift_x * sin(car_ref_yaw) + shift_y * cos(car_ref_yaw);
+          }
+
+          double target_speed = 49.5;
+          double points_dist = (target_speed/2.237) * 0.02;
+
+          tk::spline s;
+
+          s.set_points( waypoints_x, waypoints_y);
+
+          std::cout << "x = " << waypoints_x[0] << " y = " << waypoints_y[0] << std::endl;
+          
+          next_x_vals = waypoints_x;
+          next_y_vals = waypoints_y;
+          /*
+          double dist_inc = 0.3;
+          for (int i = 0; i < 50; ++i)
+          {
+            double next_s = car_s + ( i+1 )*dist_inc;
+            double next_d = car_d;
+            vector<double> xy = getXY( next_s, next_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            next_x_vals.push_back(xy[0]);
+            next_y_vals.push_back(xy[1]);
+          }
+          */
+          // END
 
 
           msgJson["next_x"] = next_x_vals;
