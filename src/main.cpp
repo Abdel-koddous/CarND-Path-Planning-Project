@@ -54,8 +54,10 @@ int main() {
   // Starting speed set to 0
   double current_speed = 0.0; // mph
 
+  int current_lane = 1;
+
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy,&current_speed]
+               &map_waypoints_dx,&map_waypoints_dy,&current_speed, &current_lane]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -109,6 +111,7 @@ int main() {
           double target_acceleration = 4; // in m/s**2
           double safety_distance = 30;
           bool tooClose = false;
+          int previous_path_size = previous_path_x.size();
 
           // loop over cars from sensor fusion module
           //std::cout << "===============> My d = " << car_d << std::endl;
@@ -131,7 +134,9 @@ int main() {
             // Check if current car is in my lane
             if( (car_i_d >= car_d - 2) && (car_i_d <= car_d + 2) )
             {
-
+              //car_i_s += car_i_speed * 0.02 * previous_path_size; // predict where the other car is gonna be in the future
+              //car_s += (car_speed/2.237) * 0.02 * previous_path_size; // Where our car is gonna be in the future
+              
               double distance_to_car = car_i_s - car_s;
               //std::cout << "The car " <<  car_i_id << " is in my lane !" << std::endl;
 
@@ -149,6 +154,10 @@ int main() {
                   tooClose = true;
                   // Change Lane
                   // car_d += 3;
+                  if(current_lane > 0)
+                  {
+                    current_lane = current_lane - 1;
+                  }
                 }
               }
             }
@@ -174,7 +183,6 @@ int main() {
           // Use the previous path last x=2 points to start the new path
           // The new path is to be tangent to the old path
           // the reference point of the new path would be the last point in the previous path
-          int previous_path_size = previous_path_x.size();
           //std::cout << "Previous path size ==> " << previous_path_size << " Speed ==> " << car_speed << std::endl;
           
           double car_ref_x = car_x;
@@ -221,7 +229,7 @@ int main() {
           for ( int i = 0; i < N; ++i )
           {
             double next_s = car_s + ( i+1 )*wide_dist;
-            vector<double> xy = getXY( next_s, 6, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> xy = getXY( next_s, 2 + 4*current_lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
             waypoints_x.push_back(xy[0]);
             waypoints_y.push_back(xy[1]);
           }
