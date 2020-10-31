@@ -51,8 +51,11 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
 
+  // Starting speed set to 0
+  double current_speed = 0.0; // mph
+
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy]
+               &map_waypoints_dx,&map_waypoints_dy,&current_speed]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -102,10 +105,13 @@ int main() {
            */
 
           // ======= Collision Avoidance ==========
-          double target_speed = 49.5;
-          double safety_distance = 20;
+          double target_speed = 49.5; // in mph
+          double target_acceleration = 4; // in m/s**2
+          double safety_distance = 30;
+          bool tooClose = false;
+
           // loop over cars from sensor fusion module
-          std::cout << "===============> My d = " << car_d << std::endl;
+          //std::cout << "===============> My d = " << car_d << std::endl;
 
           for (int i = 0; i < sensor_fusion.size(); i++)
           {
@@ -120,29 +126,45 @@ int main() {
 
             //int lane = d/3;
 
-            std::cout << "d = " << car_i_d << std::endl;
+            //std::cout << "car_i_d = " << car_i_d << std::endl;
 
             // Check if current car is in my lane
             if( (car_i_d >= car_d - 2) && (car_i_d <= car_d + 2) )
             {
 
               double distance_to_car = car_i_s - car_s;
-              std::cout << "The car " <<  car_i_id << " is in my lane !" << std::endl;
+              //std::cout << "The car " <<  car_i_id << " is in my lane !" << std::endl;
 
               if(distance_to_car > 0)
               {
-                std::cout << "That car is IN FRONT OF you --> " << distance_to_car << std::endl;
+                //std::cout << "That car is IN FRONT OF you --> " << distance_to_car << std::endl;
 
                 if ( distance_to_car <= safety_distance )
                 {
                   // Do some action (Slow down - Match speed - Change lane ...)
-                  std::cout << "-------------> Too close !!" << std::endl;
-                  target_speed = car_i_speed*2.237;
+                  // std::cout << "-------------> Too close !!" << std::endl;
+
+                  // Change Speed 
+                  // current_speed = car_i_speed*2.237; // this is so brutal
+                  tooClose = true;
+                  // Change Lane
+                  // car_d += 3;
                 }
               }
             }
 
           }
+
+          if(tooClose == true)
+          {
+            current_speed -= (target_acceleration*0.02) * 2.237; // incremental decceleration
+          }
+          else if(current_speed < target_speed )
+          {
+            current_speed += (target_acceleration*0.02) * 2.237;
+          }
+          
+          // =================================================================
 
           // ======= Create a list of "widely" spaced (x,y) waypoints - Low res new path
 
@@ -260,7 +282,7 @@ int main() {
           double target_y = s(target_x);
           double distance_to_target = sqrt( (target_x*target_x) + (target_y*target_y) );
 
-          double points_dist = (target_speed/2.237) * 0.02;
+          double points_dist = (current_speed/2.237) * 0.02;
           double NbOfPoints_to_target = distance_to_target/points_dist;
 
 
