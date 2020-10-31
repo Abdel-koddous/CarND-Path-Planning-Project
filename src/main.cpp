@@ -108,24 +108,57 @@ int main() {
           vector<double> waypoints_y;
 
           // Use the previous path last x=2 points to start the new path
-          // The new path is to be tangent to the new path
+          // The new path is to be tangent to the old path
           // the reference point of the new path would be the last point in the previous path
           int previous_path_size = previous_path_x.size();
-          std::cout << "Previous path size ==> " << previous_path_size << std::endl;
-
-          double car_ref_x = previous_path_x[previous_path_size - 1];
-          double car_ref_y = previous_path_y[previous_path_size - 1];
-
-          double car_ref_x_prev = previous_path_x[previous_path_size - 2];
-          double car_ref_y_prev = previous_path_y[previous_path_size - 2];
-
-          double car_ref_yaw = atan2( car_ref_y - car_ref_y_prev, car_ref_x - car_ref_x_prev );
+          std::cout << "Previous path size ==> " << previous_path_size << " Speed ==> " << car_speed << std::endl;
           
+          double car_ref_x = car_x;
+          double car_ref_y = car_y;
+          double car_ref_yaw = deg2rad(car_yaw);
+
+          if( previous_path_size < 2 ) 
+          {
+
+            // Estimating where the car was in the previous point ( before 0.02s ) using its speed and angle (NOT VALID IN INTIALLY)
+            double car_ref_x_prev =  car_x - cos(car_yaw);
+            double car_ref_y_prev =  car_y - sin(car_yaw);         
+            
+            waypoints_x.push_back( car_ref_x_prev );
+            //waypoints_x.push_back( car_x );
+
+            waypoints_y.push_back( car_ref_y_prev );
+            //waypoints_y.push_back( car_y );
+
+          }
+          else
+          {
+            /*/ Debug 
+            for(int i=0;i<previous_path_size;++i)
+            {
+              std::cout << "Previous path item i = " << previous_path_x[i] << std::endl;
+            } */
+
+            // Using the last couple of points in the previous path
+            car_ref_x = previous_path_x[previous_path_size - 1];
+            car_ref_y = previous_path_y[previous_path_size - 1];
+
+            double car_ref_x_prev = previous_path_x[previous_path_size - 2];
+            double car_ref_y_prev = previous_path_y[previous_path_size - 2];
+            car_ref_yaw = atan2( car_ref_y - car_ref_y_prev, car_ref_x - car_ref_x_prev );
+
+            waypoints_x.push_back( car_ref_x_prev );
+            //waypoints_x.push_back( car_ref_x );
+
+            waypoints_y.push_back( car_ref_y_prev );
+            //waypoints_y.push_back( car_ref_y );
+
+          }
+
           waypoints_x.push_back( car_ref_x );
           waypoints_y.push_back( car_ref_y );
 
-          waypoints_x.push_back( car_ref_x_prev );
-          waypoints_y.push_back( car_ref_y_prev );
+  
 
           // Introduce N more widely spaced points in the new path
           int N = 3; // Number of initial widely spaced waypoints
@@ -134,15 +167,21 @@ int main() {
           for ( int i = 0; i < N; ++i )
           {
             double next_s = car_s + ( i+1 )*wide_dist;
-            double next_d = car_d;
-            vector<double> xy = getXY( next_s, next_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> xy = getXY( next_s, 6, map_waypoints_s, map_waypoints_x, map_waypoints_y);
             waypoints_x.push_back(xy[0]);
             waypoints_y.push_back(xy[1]);
           }
-          // By the end of the for loop we have 2 + 3 points in waypoints_xy
+          // By the end of the for loop we have 2 + 3 = 5 points in waypoints_xy
 
+          std::cout << "------------ Waypoints ------------" << std::endl;
 
-          // Converting to global coordinates to car local reference
+          for(int i = 0; i < waypoints_x.size(); ++i )
+          {
+            std::cout << "x = " << waypoints_x[i] << " y = " << waypoints_y[i] << std::endl;
+          }
+          std::cout << "-----------------------------------" << std::endl;
+
+          // Converting the global coordinates to car local reference
           for( int i=0; i<waypoints_x.size(); ++i )
           {
             // Shift current coordinates to car_ref
@@ -154,13 +193,20 @@ int main() {
             waypoints_y[i] = -shift_x * sin(car_ref_yaw) + shift_y * cos(car_ref_yaw);
           }
 
+          std::cout << "------------ Waypoints in local coordinates------------" << std::endl;
 
+          for(int i = 0; i < waypoints_x.size(); ++i )
+          {
+            std::cout << "x = " << waypoints_x[i] << " y = " << waypoints_y[i] << std::endl;
+          }
+          std::cout << "-----------------------------------" << std::endl;
           // Create an object from the class spline
           tk::spline s;
 
+
           s.set_points( waypoints_x, waypoints_y);
 
-          //std::cout << "x = " << waypoints_x[0] << " y = " << waypoints_y[0] << std::endl;
+
           
           // Start by using the points that were NOT CONSUMED in the previous path
           for (int i  = 0; i < previous_path_x.size(); ++i)
@@ -181,10 +227,13 @@ int main() {
           double points_dist = (target_speed/2.237) * 0.02;
           double NbOfPoints_to_target = distance_to_target/points_dist;
 
+          //double x_add_on = 0;
           // Up to now the new path has previous_path_x.size() points in it
           // Let's generate new points to get its size back to the chosen standard value (here = 50)
-          for (int i = 1; i <= 50 - previous_path_x.size(); ++i)
+          for (int i = 1; i <= 50 - previous_path_x.size(); i++)
           {
+            
+            //The Problem is not here ...
             double x_ref = i * points_dist;
             double y_ref =  s(x_ref);
 
@@ -197,6 +246,28 @@ int main() {
 
             next_x_vals.push_back(next_point_x);
             next_y_vals.push_back(next_point_y);
+
+            std::cout << "x = " << next_point_x << "  - y = " << next_point_y << std::endl;
+            
+           /*
+           double N = (distance_to_target/(0.02*target_speed/2.24));
+           double x_point = x_add_on + (target_x)/N;
+           double y_point = s(x_point);
+
+           x_add_on = x_point;
+
+           double x_ref = x_point;
+           double y_ref = y_point;
+
+           x_point = x_ref*cos(car_ref_yaw) - y_ref*sin(car_ref_yaw);
+           y_point = x_ref*sin(car_ref_yaw) + y_ref*cos(car_ref_yaw);
+
+           x_point += car_ref_x;
+           y_point += car_ref_y;
+
+           next_x_vals.push_back(x_point);
+           next_y_vals.push_back(y_point);
+           */
 
           }
 
