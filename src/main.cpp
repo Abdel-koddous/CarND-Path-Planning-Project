@@ -101,6 +101,49 @@ int main() {
            *   sequentially every .02 seconds
            */
 
+          // ======= Collision Avoidance ==========
+          double target_speed = 49.5;
+          double safety_distance = 20;
+          // loop over cars from sensor fusion module
+          std::cout << "===============> My d = " << car_d << std::endl;
+
+          for (int i = 0; i < sensor_fusion.size(); i++)
+          {
+            int car_i_id = sensor_fusion[i][0];
+            double car_i_s = sensor_fusion[i][5];
+            double car_i_d = sensor_fusion[i][6];
+
+            //double car_i_speed = (double) (sensor_fusion[i][3] * sensor_fusion[i][3]) + (sensor_fusion[i][4]*sensor_fusion[i][4]); // had some werid overload issue - need to be casted to double first
+            double car_i_speed_x = sensor_fusion[i][3];
+            double car_i_speed_y = sensor_fusion[i][4];
+            double car_i_speed = sqrt( (car_i_speed_x*car_i_speed_x) + (car_i_speed_y*car_i_speed_y) );
+
+            //int lane = d/3;
+
+            std::cout << "d = " << car_i_d << std::endl;
+
+            // Check if current car is in my lane
+            if( (car_i_d >= car_d - 2) && (car_i_d <= car_d + 2) )
+            {
+
+              double distance_to_car = car_i_s - car_s;
+              std::cout << "The car " <<  car_i_id << " is in my lane !" << std::endl;
+
+              if(distance_to_car > 0)
+              {
+                std::cout << "That car is IN FRONT OF you --> " << distance_to_car << std::endl;
+
+                if ( distance_to_car <= safety_distance )
+                {
+                  // Do some action (Slow down - Match speed - Change lane ...)
+                  std::cout << "-------------> Too close !!" << std::endl;
+                  target_speed = car_i_speed*2.237;
+                }
+              }
+            }
+
+          }
+
           // ======= Create a list of "widely" spaced (x,y) waypoints - Low res new path
 
           vector<double> waypoints_x;
@@ -217,7 +260,6 @@ int main() {
           double target_y = s(target_x);
           double distance_to_target = sqrt( (target_x*target_x) + (target_y*target_y) );
 
-          double target_speed = 49.5;
           double points_dist = (target_speed/2.237) * 0.02;
           double NbOfPoints_to_target = distance_to_target/points_dist;
 
