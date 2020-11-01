@@ -113,6 +113,7 @@ int main() {
           bool tooClose = false;
           int previous_path_size = previous_path_x.size();
 
+          double blocking_car_speed = target_speed; // mph
           // loop over cars from sensor fusion module
           //std::cout << "===============> My d = " << car_d << std::endl;
 
@@ -131,8 +132,8 @@ int main() {
 
             //std::cout << "car_i_d = " << car_i_d << std::endl;
 
-            // Check if current car is in my lane
-            if( (car_i_d >= car_d - 2) && (car_i_d <= car_d + 2) )
+            // Check if current car is in my current lane
+            if( (car_i_d >= 2 + 4*current_lane - 2) && (car_i_d <= 2 + 4*current_lane + 2) )
             {
               //car_i_s += car_i_speed * 0.02 * previous_path_size; // predict where the other car is gonna be in the future
               //car_s += (car_speed/2.237) * 0.02 * previous_path_size; // Where our car is gonna be in the future
@@ -147,30 +148,40 @@ int main() {
                 if ( distance_to_car <= safety_distance )
                 {
                   // Do some action (Slow down - Match speed - Change lane ...)
-                  // std::cout << "-------------> Too close !!" << std::endl;
+                  blocking_car_speed = car_i_speed*2.237;
+
+                  std::cout << "-------------> Too close !! " << distance_to_car << 
+                  "Its speed => " << car_i_speed*2.237 << std::endl;
+
 
                   // Change Speed 
                   // current_speed = car_i_speed*2.237; // this is so brutal
                   tooClose = true;
                   // Change Lane
                   // car_d += 3;
-                  if(current_lane > 0)
+                  /*
+                  if(current_lane >= 0)
                   {
-                    current_lane = current_lane - 1;
-                  }
+                    current_lane = rand()%3;
+                    std::cout << "--- Switching to lane N." << current_lane << std::endl;
+                  }*/
                 }
               }
             }
 
           }
 
-          if(tooClose == true)
+          if(tooClose == true && current_speed > blocking_car_speed )
           {
             current_speed -= (target_acceleration*0.02) * 2.237; // incremental decceleration
           }
           else if(current_speed < target_speed )
           {
             current_speed += (target_acceleration*0.02) * 2.237;
+          }
+          else
+          {
+            std::cout << "Not that close any more ... "  << std::endl;
           }
           
           // =================================================================
@@ -224,7 +235,7 @@ int main() {
 
           // Introduce N more widely spaced points in the new path
           int N = 3; // Number of initial widely spaced waypoints
-          double wide_dist = 50.0; // Even distance between intial points
+          double wide_dist = 40.0; // Even distance between intial points
 
           for ( int i = 0; i < N; ++i )
           {
@@ -286,7 +297,7 @@ int main() {
           
 
           // Calculate points between two "widely" spread points of the spline
-          double target_x = 50.0;
+          double target_x = 40.0;
           double target_y = s(target_x);
           double distance_to_target = sqrt( (target_x*target_x) + (target_y*target_y) );
 
