@@ -13,6 +13,34 @@
 using nlohmann::json;
 using std::string;
 using std::vector;
+using std::cout;
+using std::endl;
+
+int get_car_lane( double d)
+{
+  // d in Frenet coordinates
+  double lane_width = 4;
+  int lane;
+
+  if(d >= 0 && d < 4)
+  {
+    lane = 0;
+  }
+  else if(d >= 4 && d < 8)
+  {
+    lane = 1;
+  }
+  else if(d >= 8 && d <= 12)
+  {
+    lane = 2;
+  }
+  else
+  {
+    cout << "ERROR - get_car_lane - Outside of the 3 highway lanes" << endl;
+    return -1; // Outside of the 3 highway lanes
+  }
+  return lane;
+}
 
 int main() {
   uWS::Hub h;
@@ -56,8 +84,19 @@ int main() {
 
   int current_lane = 1;
 
+  enum state
+  {
+    KL,
+    PLCL,
+    PLCR,
+    LCL,
+    LCR
+  };
+
+  state my_car_state = KL;
+
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy,&current_speed, &current_lane]
+               &map_waypoints_dx,&map_waypoints_dy, &current_speed, &current_lane, &my_car_state]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -114,19 +153,41 @@ int main() {
           int previous_path_size = previous_path_x.size();
 
           double blocking_car_speed = target_speed; // mph
+
+          vector< vector< vector<double> > > cars_in_lanes(3); // an outer vector of size 3 that classifies sensor_fusion data into lanes
+
+          double scan_distance = 40.0; // sets the window of cars to consider in cars_in_lanes
+
+          cout << typeid(sensor_fusion).name() << endl;
+
+
           // loop over cars from sensor fusion module
           //std::cout << "===============> My d = " << car_d << std::endl;
 
           for (int i = 0; i < sensor_fusion.size(); i++)
           {
-            int car_i_id = sensor_fusion[i][0];
-            double car_i_s = sensor_fusion[i][5];
-            double car_i_d = sensor_fusion[i][6];
+            vector<double> car_i = sensor_fusion[i];
+            int car_i_id = car_i[0];
+            double car_i_s = car_i[5];
+            double car_i_d = car_i[6];
 
             //double car_i_speed = (double) (sensor_fusion[i][3] * sensor_fusion[i][3]) + (sensor_fusion[i][4]*sensor_fusion[i][4]); // had some werid overload issue - need to be casted to double first
-            double car_i_speed_x = sensor_fusion[i][3];
-            double car_i_speed_y = sensor_fusion[i][4];
-            double car_i_speed = sqrt( (car_i_speed_x*car_i_speed_x) + (car_i_speed_y*car_i_speed_y) );
+            double car_i_speed_x = car_i[3];
+            double car_i_speed_y = car_i[4];
+            double car_i_speed = sqrt( (car_i_speed_x*car_i_speed_x) + (car_i_speed_y*car_i_speed_y) ); // m/s
+            
+            double distance_to_car = car_i_s - car_s;
+            
+            
+            if(abs(distance_to_car) <= scan_distance)
+            {
+
+              cars_in_lanes[ get_car_lane(car_i_d) ].push_back(car_i); // Add close car to its corresponding lane class
+
+              cout << "Car lane ==> " << get_car_lane(car_i_d) << " - Car id ==> " << car_i_id 
+              << " - Distance to car ==> " << distance_to_car <<  "- Car speed " <<  car_i_speed*2.237 << endl;
+            }
+            
 
             //int lane = d/3;
 
@@ -138,7 +199,6 @@ int main() {
               //car_i_s += car_i_speed * 0.02 * previous_path_size; // predict where the other car is gonna be in the future
               //car_s += (car_speed/2.237) * 0.02 * previous_path_size; // Where our car is gonna be in the future
               
-              double distance_to_car = car_i_s - car_s;
               //std::cout << "The car " <<  car_i_id << " is in my lane !" << std::endl;
 
               if(distance_to_car > 0)
@@ -150,8 +210,8 @@ int main() {
                   // Do some action (Slow down - Match speed - Change lane ...)
                   blocking_car_speed = car_i_speed*2.237;
 
-                  std::cout << "-------------> Too close !! " << distance_to_car << 
-                  "Its speed => " << car_i_speed*2.237 << std::endl;
+                  //std::cout << "-------------> Too close !! " << distance_to_car << 
+                  //"Its speed => " << car_i_speed*2.237 << std::endl;
 
 
                   // Change Speed 
@@ -170,20 +230,54 @@ int main() {
             }
 
           }
+          cout << "Current state --> " << my_car_state << endl;
+          switch (my_car_state)
+          {
+          case KL:
 
-          if(tooClose == true && current_speed > blocking_car_speed )
-          {
-            current_speed -= (target_acceleration*0.02) * 2.237; // incremental decceleration
-          }
-          else if(current_speed < target_speed )
-          {
-            current_speed += (target_acceleration*0.02) * 2.237;
-          }
-          else
-          {
-            std::cout << "Not that close any more ... "  << std::endl;
-          }
+            if(tooClose == true && current_speed > blocking_car_speed )
+            {
+              current_speed -= (target_acceleration*0.02) * 2.237; // incremental decceleration
+            }
+            else if(current_speed < target_speed )
+            {
+              current_speed += (target_acceleration*0.02) * 2.237;
+            }
+            else
+            {
+              //std::cout << "Not that close any more ... "  << std::endl;
+            }
+
+            if( abs(current_speed - blocking_car_speed) < 5 && tooClose == true) // got matching speed - start looking for alternatives
+            {
+              my_car_state = PLCL;
+            } 
           
+            break;
+                    
+          case PLCL:
+
+            if(cars_in_lanes[current_lane - 1].size() == 0)
+            {
+              cout << "---> LEFT LANE IS EMPTY <--- Youpi !!" << endl;
+              current_lane--;
+              my_car_state = KL;
+            }
+            break;
+          
+          case PLCR:
+            break;
+          
+          case LCL:
+            break;
+          
+          case LCR:
+            break;
+
+          default:
+            break;
+          }
+
           // =================================================================
 
           // ======= Create a list of "widely" spaced (x,y) waypoints - Low res new path
