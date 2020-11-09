@@ -94,9 +94,10 @@ int main() {
   };
 
   state my_car_state = KL;
+  double decceleration_time = 0.0; // seconds
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &current_speed, &current_lane, &my_car_state]
+               &map_waypoints_dx,&map_waypoints_dy, &current_speed, &current_lane, &my_car_state, &decceleration_time]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -147,18 +148,21 @@ int main() {
 
           // ======= Collision Avoidance ==========
           double target_speed = 49.5; // in mph
+          double target_speed_m_per_sec = 49.5/2.237; // m/s
           double target_acceleration = 4; // in m/s**2
-          double safety_distance = 30;
-          bool tooClose = false;
+          double safety_distance = 20;
+          bool startDeccelerating = false;
           int previous_path_size = previous_path_x.size();
 
-          double blocking_car_speed = target_speed; // mph
+          double blocking_car_speed = target_speed; // MPH
+          double distance_to_blocking_car;
+          double blocking_car_lookUp_distance = 60; // m
 
           vector< vector< vector<double> > > cars_in_lanes(3); // an outer vector of size 3 that classifies sensor_fusion data into lanes
 
           double scan_distance = 40.0; // sets the window of cars to consider in cars_in_lanes
 
-          cout << typeid(sensor_fusion).name() << endl;
+          //cout << typeid(sensor_fusion).name() << endl;
 
 
           // loop over cars from sensor fusion module
@@ -171,7 +175,6 @@ int main() {
             double car_i_s = car_i[5];
             double car_i_d = car_i[6];
 
-            //double car_i_speed = (double) (sensor_fusion[i][3] * sensor_fusion[i][3]) + (sensor_fusion[i][4]*sensor_fusion[i][4]); // had some werid overload issue - need to be casted to double first
             double car_i_speed_x = car_i[3];
             double car_i_speed_y = car_i[4];
             double car_i_speed = sqrt( (car_i_speed_x*car_i_speed_x) + (car_i_speed_y*car_i_speed_y) ); // m/s
@@ -184,8 +187,8 @@ int main() {
 
               cars_in_lanes[ get_car_lane(car_i_d) ].push_back(car_i); // Add close car to its corresponding lane class
 
-              cout << "Car lane ==> " << get_car_lane(car_i_d) << " - Car id ==> " << car_i_id 
-              << " - Distance to car ==> " << distance_to_car <<  "- Car speed " <<  car_i_speed*2.237 << endl;
+              //cout << "Car lane ==> " << get_car_lane(car_i_d) << " - Car id ==> " << car_i_id 
+              //<< " - Distance to car ==> " << distance_to_car <<  "- Car speed " <<  car_i_speed*2.237 << endl;
             }
             
 
@@ -201,22 +204,38 @@ int main() {
               
               //std::cout << "The car " <<  car_i_id << " is in my lane !" << std::endl;
 
-              if(distance_to_car > 0)
+              if(distance_to_car > 0 && distance_to_car < blocking_car_lookUp_distance )
               {
                 //std::cout << "That car is IN FRONT OF you --> " << distance_to_car << std::endl;
-
-                if ( distance_to_car <= safety_distance )
-                {
                   // Do some action (Slow down - Match speed - Change lane ...)
-                  blocking_car_speed = car_i_speed*2.237;
+                blocking_car_speed = car_i_speed*2.237;
 
-                  //std::cout << "-------------> Too close !! " << distance_to_car << 
-                  //"Its speed => " << car_i_speed*2.237 << std::endl;
+                double d_mycar =  ( target_speed + blocking_car_speed )*( blocking_car_speed - target_speed )/( -2*target_acceleration ) * 1/(2.237*2.237); // m
+                double d_blockingCar = blocking_car_speed*( blocking_car_speed - target_speed )/( -target_acceleration ) * 1/(2.237*2.237); // m
+                double d_deceleration = 2*( d_mycar - d_blockingCar ) + safety_distance; // m
+                //cout << "My car traveled distance => " << d_mycar << 
+                //" m --- Blocking car traveled distance => " << d_blockingCar << " m --- d_decceleration => " << d_deceleration << " m" << endl;
+
+                distance_to_blocking_car = car_i_s - car_s;
+
+                cout << "Deceleration distance => " << d_deceleration << " m --- " << 
+                "Distance Upfront => " << distance_to_blocking_car << " m --- " <<  
+                "d_mycar => " << d_mycar << " m --- " << 
+                "d_blockingCar => " << d_blockingCar << " m ---" << endl; 
+                
+                if ( distance_to_car <= d_deceleration )
+                {
+
+                  //cout << "-------------> Getting too close start deccelerating !! " << endl;
+                  cout << "----- Distance Upfront => " << distance_to_blocking_car << " m --- "  
+                  << "Blocking car speed => " << blocking_car_speed << " MPH --- " << "My speed => " << current_speed  << " MPH ---" << endl;
 
 
                   // Change Speed 
                   // current_speed = car_i_speed*2.237; // this is so brutal
-                  tooClose = true;
+                  startDeccelerating = true;
+
+                  decceleration_time += 0.02;
                   // Change Lane
                   // car_d += 3;
                   /*
@@ -230,38 +249,44 @@ int main() {
             }
 
           }
-          cout << "Current state --> " << my_car_state << endl;
+          //cout << "---------- Current state --------> " << my_car_state << endl;
           switch (my_car_state)
           {
           case KL:
 
-            if(tooClose == true && current_speed > blocking_car_speed )
+            if(startDeccelerating == true )
             {
-              current_speed -= (target_acceleration*0.02) * 2.237; // incremental decceleration
+              if ( abs(current_speed - blocking_car_speed) < 1 )
+              {
+                cout << "-- Found a matching speed :) in ==> " << decceleration_time << " seconds --" << endl;
+                decceleration_time = 0;
+                current_speed = blocking_car_speed;
+              }
+              else
+              {
+                current_speed -= (target_acceleration*0.02) * 2.237; // incremental decceleration
+              }
             }
+
             else if(current_speed < target_speed )
             {
               current_speed += (target_acceleration*0.02) * 2.237;
             }
-            else
-            {
-              //std::cout << "Not that close any more ... "  << std::endl;
-            }
 
-            if( abs(current_speed - blocking_car_speed) < 5 && tooClose == true) // got matching speed - start looking for alternatives
-            {
-              my_car_state = PLCL;
-            } 
-          
             break;
                     
           case PLCL:
+            
+            if(true)//tooClose == true )
+            {
+              current_speed -= (target_acceleration*0.02) * 2.237; // incremental decceleration
+            }
 
             if(cars_in_lanes[current_lane - 1].size() == 0)
             {
               cout << "---> LEFT LANE IS EMPTY <--- Youpi !!" << endl;
-              current_lane--;
-              my_car_state = KL;
+              my_car_state = LCL;
+
             }
             break;
           
@@ -269,6 +294,10 @@ int main() {
             break;
           
           case LCL:
+              current_lane--;
+              my_car_state = KL;
+              //tooClose  = false;
+              
             break;
           
           case LCR:
