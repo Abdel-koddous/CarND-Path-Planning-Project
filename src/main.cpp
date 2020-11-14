@@ -218,17 +218,19 @@ int main() {
 
                 distance_to_blocking_car = car_i_s - car_s;
 
+                /*
                 cout << "Deceleration distance => " << d_deceleration << " m --- " << 
                 "Distance Upfront => " << distance_to_blocking_car << " m --- " <<  
                 "d_mycar => " << d_mycar << " m --- " << 
                 "d_blockingCar => " << d_blockingCar << " m ---" << endl; 
-                
+                */
                 if ( distance_to_car <= d_deceleration )
                 {
 
                   //cout << "-------------> Getting too close start deccelerating !! " << endl;
-                  cout << "----- Distance Upfront => " << distance_to_blocking_car << " m --- "  
-                  << "Blocking car speed => " << blocking_car_speed << " MPH --- " << "My speed => " << current_speed  << " MPH ---" << endl;
+                  
+                  //cout << "----- Distance Upfront => " << distance_to_blocking_car << " m --- "  
+                  //<< "Blocking car speed => " << blocking_car_speed << " MPH --- " << "My speed => " << current_speed  << " MPH ---" << endl;
 
 
                   // Change Speed 
@@ -253,7 +255,7 @@ int main() {
           switch (my_car_state)
           {
           case KL:
-
+          {
             if(startDeccelerating == true )
             {
               if ( abs(current_speed - blocking_car_speed) < 1 )
@@ -261,6 +263,7 @@ int main() {
                 cout << "-- Found a matching speed :) in ==> " << decceleration_time << " seconds --" << endl;
                 decceleration_time = 0;
                 current_speed = blocking_car_speed;
+                my_car_state = PLCL;
               }
               else
               {
@@ -272,36 +275,103 @@ int main() {
             {
               current_speed += (target_acceleration*0.02) * 2.237;
             }
+          }
+          break;
 
-            break;
-                    
+
           case PLCL:
-            
-            if(true)//tooClose == true )
+          {
+            if( current_lane == 0 )
             {
-              current_speed -= (target_acceleration*0.02) * 2.237; // incremental decceleration
+              my_car_state = PLCR;
+              break;
             }
 
-            if(cars_in_lanes[current_lane - 1].size() == 0)
+            current_speed = blocking_car_speed;
+            int numberOfCarsInLeftLane = cars_in_lanes[current_lane - 1].size();
+
+            if( numberOfCarsInLeftLane == 0) // Empty lane in the scan window
             {
               cout << "---> LEFT LANE IS EMPTY <--- Youpi !!" << endl;
               my_car_state = LCL;
 
             }
-            break;
-          
+            else
+            {
+              bool carBehindMe = false;
+              cout << "Checking if car is behind on the left" << endl;
+            
+              for (int i = 0; i < numberOfCarsInLeftLane; i++ )
+              {
+                // check if car in target lane is behind me with safe distance
+                double distanceToCarInTargetLane = car_s - cars_in_lanes[current_lane - 1][i][5];
+                if ( distanceToCarInTargetLane < 8 && distanceToCarInTargetLane > -8 )
+                {
+                  carBehindMe = true;
+                  cout << "A car is just behind me on the left" << distanceToCarInTargetLane << "m" <<endl;
+                  break;
+                } 
+              }
+
+              my_car_state = ( carBehindMe == false ) ? LCL : PLCR;
+            }
+          }
+          break;
+
+
           case PLCR:
-            break;
+          {
+            if( current_lane == 2 )
+            {
+              my_car_state = PLCL;
+              break;
+            }
+            
+            current_speed = blocking_car_speed;
+            int numberOfCarsInRightLane = cars_in_lanes[current_lane + 1].size();
+
+            if(numberOfCarsInRightLane == 0)
+            {
+              cout << "---> RIGHT LANE IS EMPTY <--- Youpi !!" << endl;
+              my_car_state = LCR;
+
+            }
+            else
+            {
+              bool carBehindMe = false;
+              cout << "Checking if car is behind on the right" << endl;
+            
+              for (int i = 0; i < numberOfCarsInRightLane; i++ )
+              {
+                // check if car in target lane is behind me with safe distance
+                double distanceToCarInTargetLane = car_s - cars_in_lanes[current_lane + 1][i][5];
+                if ( distanceToCarInTargetLane < 8 && distanceToCarInTargetLane > -8 ) // this does take into account the difference in speeds beteen the two lanes ...
+                {
+                  carBehindMe = true;
+                  cout << "A car is just behind me on the right" << distanceToCarInTargetLane << "m" <<endl;
+                  break;
+                } 
+              }
+
+              my_car_state = ( carBehindMe == false ) ? LCR : PLCL;
+            }
+          }
+          break;
           
           case LCL:
+          {
               current_lane--;
               my_car_state = KL;
               //tooClose  = false;
-              
-            break;
+          }    
+          break;
           
           case LCR:
-            break;
+          {
+              current_lane++;
+              my_car_state = KL;
+          }
+          break;
 
           default:
             break;
