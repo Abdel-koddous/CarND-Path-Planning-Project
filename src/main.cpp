@@ -258,20 +258,20 @@ int main() {
           {
             if(startDeccelerating == true )
             {
-              if ( abs(current_speed - blocking_car_speed) < 1 )
+              if ( abs(current_speed - blocking_car_speed) > 1 )
+              {
+                current_speed -= (target_acceleration*0.02) * 2.237; // incremental decceleration
+              }
+              else
               {
                 cout << "-- Found a matching speed :) in ==> " << decceleration_time << " seconds --" << endl;
                 decceleration_time = 0;
                 current_speed = blocking_car_speed;
                 my_car_state = PLCL;
-              }
-              else
-              {
-                current_speed -= (target_acceleration*0.02) * 2.237; // incremental decceleration
-              }
+              }              
             }
 
-            else if(current_speed < target_speed )
+            else if( current_speed < target_speed )
             {
               current_speed += (target_acceleration*0.02) * 2.237;
             }
@@ -294,26 +294,39 @@ int main() {
             {
               cout << "---> LEFT LANE IS EMPTY <--- Youpi !!" << endl;
               my_car_state = LCL;
-
             }
+            
             else
             {
               bool carBehindMe = false;
+              double speedGain = 0.0;
               cout << "Checking if car is behind on the left" << endl;
             
               for (int i = 0; i < numberOfCarsInLeftLane; i++ )
               {
                 // check if car in target lane is behind me with safe distance
-                double distanceToCarInTargetLane = car_s - cars_in_lanes[current_lane - 1][i][5];
-                if ( distanceToCarInTargetLane < 8 && distanceToCarInTargetLane > -8 )
+                vector<double> carInTargetLane = cars_in_lanes[current_lane - 1][i];
+                double distanceToCarInTargetLane = car_s - carInTargetLane[5];
+                double speedOfCarInTargetLane = sqrt( carInTargetLane[3]*carInTargetLane[3] + carInTargetLane[4]*carInTargetLane[4] ); // m/s
+                double myFuturePosition = car_s + (previous_path_size*0.02) * (current_speed/2.237);
+                double carInTargetLaneFuturePosition = carInTargetLane[5] + (previous_path_size*0.02) * speedOfCarInTargetLane;
+                double futureDistanceToCarInTargetLane = myFuturePosition - carInTargetLaneFuturePosition; // after a potential lane change
+                speedGain = speedOfCarInTargetLane*2.237 - current_speed; // MPH
+
+                cout << "My lane speed = " << current_speed << " mph - Target Lane speed = " << speedOfCarInTargetLane*2.237 << " mph - speed Gain = " << speedGain << " mph" << endl;
+                cout << "Future distance after a potential lane change " << futureDistanceToCarInTargetLane << " m" << endl;
+
+                if ( futureDistanceToCarInTargetLane < 10 && futureDistanceToCarInTargetLane > -10 ) // this does not take into account the difference in speeds beteen the two lanes ...
                 {
                   carBehindMe = true;
-                  cout << "A car is just behind me on the left" << distanceToCarInTargetLane << "m" <<endl;
+                  cout << "A car is just behind me on the left " << distanceToCarInTargetLane << " m" << endl;
+
                   break;
                 } 
+
               }
 
-              my_car_state = ( carBehindMe == false ) ? LCL : PLCR;
+              my_car_state = ( carBehindMe == false && speedGain > 2 ) ? LCL : PLCR;
             }
           }
           break;
@@ -345,7 +358,7 @@ int main() {
               {
                 // check if car in target lane is behind me with safe distance
                 double distanceToCarInTargetLane = car_s - cars_in_lanes[current_lane + 1][i][5];
-                if ( distanceToCarInTargetLane < 8 && distanceToCarInTargetLane > -8 ) // this does take into account the difference in speeds beteen the two lanes ...
+                if ( distanceToCarInTargetLane < 8 && distanceToCarInTargetLane > -8 ) // this does not take into account the difference in speeds beteen the two lanes ...
                 {
                   carBehindMe = true;
                   cout << "A car is just behind me on the right" << distanceToCarInTargetLane << "m" <<endl;
