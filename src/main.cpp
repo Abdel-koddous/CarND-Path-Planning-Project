@@ -94,10 +94,10 @@ int main() {
   };
 
   state my_car_state = KL;
-  double decceleration_time = 0.0; // seconds
+  double decceleration_duration = 0.0; // seconds
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &current_speed, &current_lane, &my_car_state, &decceleration_time]
+               &map_waypoints_dx,&map_waypoints_dy, &current_speed, &current_lane, &my_car_state, &decceleration_duration]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -147,14 +147,14 @@ int main() {
            */
 
           // ======= Collision Avoidance ==========
-          double target_speed = 49.5; // in mph
+          double target_speed = 49.5; // mph
           double target_speed_m_per_sec = 49.5/2.237; // m/s
-          double target_acceleration = 4; // in m/s**2
-          double safety_distance = 20;
+          double target_acceleration = 3; // m/s**2
+          double safety_distance = 20; // m
           bool startDeccelerating = false;
           int previous_path_size = previous_path_x.size();
 
-          double blocking_car_speed = target_speed; // MPH
+          double blocking_car_speed = target_speed; // mph
           double distance_to_blocking_car;
           double blocking_car_lookUp_distance = 60; // m
 
@@ -162,11 +162,9 @@ int main() {
 
           double scan_distance = 40.0; // sets the window of cars to consider in cars_in_lanes
 
-          //cout << typeid(sensor_fusion).name() << endl;
 
 
           // loop over cars from sensor fusion module
-          //std::cout << "===============> My d = " << car_d << std::endl;
 
           for (int i = 0; i < sensor_fusion.size(); i++)
           {
@@ -181,12 +179,13 @@ int main() {
             
             double distance_to_car = car_i_s - car_s;
             
-            
+            // Classifying sensor fusion data cars into their corresponding lanes
             if(abs(distance_to_car) <= scan_distance)
             {
 
               cars_in_lanes[ get_car_lane(car_i_d) ].push_back(car_i); // Add close car to its corresponding lane class
-
+              
+              // DEBUG
               //cout << "Car lane ==> " << get_car_lane(car_i_d) << " - Car id ==> " << car_i_id 
               //<< " - Distance to car ==> " << distance_to_car <<  "- Car speed " <<  car_i_speed*2.237 << endl;
             }
@@ -196,7 +195,7 @@ int main() {
 
             //std::cout << "car_i_d = " << car_i_d << std::endl;
 
-            // Check if current car is in my current lane
+            // Check if car_i is in my current lane
             if( (car_i_d >= 2 + 4*current_lane - 2) && (car_i_d <= 2 + 4*current_lane + 2) )
             {
               //car_i_s += car_i_speed * 0.02 * previous_path_size; // predict where the other car is gonna be in the future
@@ -204,53 +203,46 @@ int main() {
               
               //std::cout << "The car " <<  car_i_id << " is in my lane !" << std::endl;
 
-              if(distance_to_car > 0 && distance_to_car < blocking_car_lookUp_distance )
+              if(distance_to_car > 0 && distance_to_car < blocking_car_lookUp_distance ) // car is ahead of me and is within a lookUp distance
               {
                 //std::cout << "That car is IN FRONT OF you --> " << distance_to_car << std::endl;
-                  // Do some action (Slow down - Match speed - Change lane ...)
                 blocking_car_speed = car_i_speed*2.237;
 
+                // THIS PART NEEDS A CLEAR EXPLANATION FROM ME
                 double d_mycar =  ( target_speed + blocking_car_speed )*( blocking_car_speed - target_speed )/( -2*target_acceleration ) * 1/(2.237*2.237); // m
                 double d_blockingCar = blocking_car_speed*( blocking_car_speed - target_speed )/( -target_acceleration ) * 1/(2.237*2.237); // m
-                double d_deceleration = 2*( d_mycar - d_blockingCar ) + safety_distance; // m
+                double d_deceleration = 2*( d_mycar - d_blockingCar ) + safety_distance; // m - For my car to match the speed of the blocking car AND keep a safe/controlled distance to it should start deccelerating from target speed when 
+                                                                                         // the distance_to_car reachs d_deceleration 
+                // DEBUG
                 //cout << "My car traveled distance => " << d_mycar << 
                 //" m --- Blocking car traveled distance => " << d_blockingCar << " m --- d_decceleration => " << d_deceleration << " m" << endl;
 
                 distance_to_blocking_car = car_i_s - car_s;
 
-                /*
+                /* // DEBUG
                 cout << "Deceleration distance => " << d_deceleration << " m --- " << 
                 "Distance Upfront => " << distance_to_blocking_car << " m --- " <<  
                 "d_mycar => " << d_mycar << " m --- " << 
                 "d_blockingCar => " << d_blockingCar << " m ---" << endl; 
                 */
-                if ( distance_to_car <= d_deceleration )
+                if ( distance_to_blocking_car <= d_deceleration )
                 {
 
                   //cout << "-------------> Getting too close start deccelerating !! " << endl;
                   
-                  //cout << "----- Distance Upfront => " << distance_to_blocking_car << " m --- "  
-                  //<< "Blocking car speed => " << blocking_car_speed << " MPH --- " << "My speed => " << current_speed  << " MPH ---" << endl;
-
-
-                  // Change Speed 
-                  // current_speed = car_i_speed*2.237; // this is so brutal
                   startDeccelerating = true;
 
-                  decceleration_time += 0.02;
-                  // Change Lane
-                  // car_d += 3;
-                  /*
-                  if(current_lane >= 0)
-                  {
-                    current_lane = rand()%3;
-                    std::cout << "--- Switching to lane N." << current_lane << std::endl;
-                  }*/
+                  decceleration_duration += 0.02;
+
+                  
                 }
               }
             }
 
           }
+
+          // =============== BEHAVIOR PLANNING FSM =====================
+
           //cout << "---------- Current state --------> " << my_car_state << endl;
           switch (my_car_state)
           {
@@ -264,14 +256,14 @@ int main() {
               }
               else
               {
-                cout << "-- Found a matching speed :) in ==> " << decceleration_time << " seconds --" << endl;
-                decceleration_time = 0;
+                cout << "-- Found a matching speed :) in ==> " << decceleration_duration << " seconds --" << endl;
+                decceleration_duration = 0;
                 current_speed = blocking_car_speed;
                 my_car_state = PLCL;
               }              
             }
 
-            else if( current_speed < target_speed )
+            else if( current_speed < target_speed ) // No blocking car detected
             {
               current_speed += (target_acceleration*0.02) * 2.237;
             }
@@ -292,41 +284,17 @@ int main() {
 
             if( numberOfCarsInLeftLane == 0) // Empty lane in the scan window
             {
-              cout << "---> LEFT LANE IS EMPTY <--- Youpi !!" << endl;
+              cout << "---> LEFT LANE IS EMPTY <--- Great !!" << endl;
               my_car_state = LCL;
             }
-            
-            else
+
+            else // Target lane is not empty, let's monitor it !
             {
-              bool carBehindMe = false;
-              double speedGain = 0.0;
-              cout << "Checking if car is behind on the left" << endl;
-            
-              for (int i = 0; i < numberOfCarsInLeftLane; i++ )
-              {
-                // check if car in target lane is behind me with safe distance
-                vector<double> carInTargetLane = cars_in_lanes[current_lane - 1][i];
-                double distanceToCarInTargetLane = car_s - carInTargetLane[5];
-                double speedOfCarInTargetLane = sqrt( carInTargetLane[3]*carInTargetLane[3] + carInTargetLane[4]*carInTargetLane[4] ); // m/s
-                double myFuturePosition = car_s + (previous_path_size*0.02) * (current_speed/2.237);
-                double carInTargetLaneFuturePosition = carInTargetLane[5] + (previous_path_size*0.02) * speedOfCarInTargetLane;
-                double futureDistanceToCarInTargetLane = myFuturePosition - carInTargetLaneFuturePosition; // after a potential lane change
-                speedGain = speedOfCarInTargetLane*2.237 - current_speed; // MPH
 
-                cout << "My lane speed = " << current_speed << " mph - Target Lane speed = " << speedOfCarInTargetLane*2.237 << " mph - speed Gain = " << speedGain << " mph" << endl;
-                cout << "Future distance after a potential lane change " << futureDistanceToCarInTargetLane << " m" << endl;
+              bool laneChangeReady =  monitorTargetLane( car_s, current_speed, cars_in_lanes[current_lane - 1], previous_path_size, "Left");
 
-                if ( futureDistanceToCarInTargetLane < 10 && futureDistanceToCarInTargetLane > -10 ) // this does not take into account the difference in speeds beteen the two lanes ...
-                {
-                  carBehindMe = true;
-                  cout << "A car is just behind me on the left " << distanceToCarInTargetLane << " m" << endl;
-
-                  break;
-                } 
-
-              }
-
-              my_car_state = ( carBehindMe == false && speedGain > 2 ) ? LCL : PLCR;
+              my_car_state = ( laneChangeReady) ? LCL : PLCR;
+              
             }
           }
           break;
@@ -345,28 +313,16 @@ int main() {
 
             if(numberOfCarsInRightLane == 0)
             {
-              cout << "---> RIGHT LANE IS EMPTY <--- Youpi !!" << endl;
+              cout << "---> RIGHT LANE IS EMPTY <--- Great !!" << endl;
               my_car_state = LCR;
 
             }
-            else
+            else // Target lane is not empty, let's monitor it !
             {
-              bool carBehindMe = false;
-              cout << "Checking if car is behind on the right" << endl;
-            
-              for (int i = 0; i < numberOfCarsInRightLane; i++ )
-              {
-                // check if car in target lane is behind me with safe distance
-                double distanceToCarInTargetLane = car_s - cars_in_lanes[current_lane + 1][i][5];
-                if ( distanceToCarInTargetLane < 8 && distanceToCarInTargetLane > -8 ) // this does not take into account the difference in speeds beteen the two lanes ...
-                {
-                  carBehindMe = true;
-                  cout << "A car is just behind me on the right" << distanceToCarInTargetLane << "m" <<endl;
-                  break;
-                } 
-              }
+              bool laneChangeReady =  monitorTargetLane( car_s, current_speed, cars_in_lanes[current_lane + 1], previous_path_size, "Right" );
 
-              my_car_state = ( carBehindMe == false ) ? LCR : PLCL;
+              my_car_state = ( laneChangeReady) ? LCR : PLCL;
+
             }
           }
           break;
@@ -375,7 +331,6 @@ int main() {
           {
               current_lane--;
               my_car_state = KL;
-              //tooClose  = false;
           }    
           break;
           
@@ -390,8 +345,8 @@ int main() {
             break;
           }
 
-          // =================================================================
-
+          // ============== Car waypoints generator ===================
+          // Note: The implementation follows the Project Q&A video session available in the project
           // ======= Create a list of "widely" spaced (x,y) waypoints - Low res new path
 
           vector<double> waypoints_x;
@@ -451,14 +406,6 @@ int main() {
             waypoints_y.push_back(xy[1]);
           }
 
-          /*
-          std::cout << "------------ Waypoints ------------" << std::endl;
-          for(int i = 0; i < waypoints_x.size(); ++i )
-          {
-            std::cout << "x = " << waypoints_x[i] << " y = " << waypoints_y[i] << std::endl;
-          }
-          std::cout << "-----------------------------------" << std::endl;
-          */
 
 
           // So far we have 2 + 3 = 5 points in waypoints_xy (Low res new path)
@@ -473,15 +420,6 @@ int main() {
             waypoints_x[i] = shift_x * cos(car_ref_yaw) + shift_y * sin(car_ref_yaw);
             waypoints_y[i] = -shift_x * sin(car_ref_yaw) + shift_y * cos(car_ref_yaw);
           }
-
-          /*
-          std::cout << "------------ Waypoints in local coordinates------------" << std::endl;
-          for(int i = 0; i < waypoints_x.size(); ++i )
-          {
-            std::cout << "x = " << waypoints_x[i] << " y = " << waypoints_y[i] << std::endl;
-          }
-          std::cout << "-----------------------------------" << std::endl;
-          */
 
 
           // ======= Generating High Res new path =========

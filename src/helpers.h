@@ -154,4 +154,62 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
   return {x,y};
 }
 
+// Helper function to monitor the target lane during the preparation of LC
+
+
+bool monitorTargetLane( double my_car_s, double my_car_speed, vector<vector<double>> target_lane_cars, int prev_path_size, string side )
+{
+  // target_lane_cars is a vector of cars extracted in from sensor fusion module
+
+  int numberOfCarsInTargetLane = target_lane_cars.size();
+  bool carBlockingMe = false;
+  double speedGain = 0.0; // MPH
+  double speedGainThreshold = 2.0; // When blocking car in target lane is ahead of us, LC is initiated only when speed gain from LC is abve this threshold
+
+  bool changeLaneToTarget = false;
+
+  std::cout << "Monitoring " << side << " lane ... It has " << numberOfCarsInTargetLane << " car(s) within scanning distance" << std::endl;
+
+  for (int i = 0; i < numberOfCarsInTargetLane; i++ )
+  {
+    // check if car in target lane is behind me with safe distance
+    vector<double> carInTargetLane = target_lane_cars[i];
+    double distanceToCarInTargetLane = my_car_s - carInTargetLane[5];
+    double speedOfCarInTargetLane = sqrt( carInTargetLane[3]*carInTargetLane[3] + carInTargetLane[4]*carInTargetLane[4] ); // m/s
+    double myFuturePosition = my_car_s + (prev_path_size*0.02) * (my_car_speed/2.237);
+    double carInTargetLaneFuturePosition = carInTargetLane[5] + (prev_path_size*0.02) * speedOfCarInTargetLane;
+    double futureDistanceToCarInTargetLane = myFuturePosition - carInTargetLaneFuturePosition; // after a potential lane change
+
+    speedGain = (distanceToCarInTargetLane <= 0 ) ? (speedOfCarInTargetLane*2.237 - my_car_speed ) : speedGainThreshold; //  Speed Gain is currently relevent only when a car is in front of me in Target Lane (TL)
+
+    std::cout << "My lane speed = " << my_car_speed << " mph - Target Lane speed = " << speedOfCarInTargetLane*2.237 << " mph - speed Gain = " << speedGain << " mph" << std::endl;
+    std::cout << "Future distance after a potential lane change " << futureDistanceToCarInTargetLane << " m" << std::endl;
+
+    if ( futureDistanceToCarInTargetLane < 10 && futureDistanceToCarInTargetLane >= 0 ) 
+    {
+      carBlockingMe = true;
+      std::cout << "A car is just behind me in the "<< side << " lane " << distanceToCarInTargetLane << " m" << std::endl;
+
+      break;
+    } 
+
+    else if ( futureDistanceToCarInTargetLane > -25 && futureDistanceToCarInTargetLane < 0)
+    {
+      carBlockingMe = true;
+      
+      std::cout << "A car is just ahead me in the " << side << " lane " << distanceToCarInTargetLane << " m" << std::endl;
+      break;
+    }
+    
+
+  }
+
+  changeLaneToTarget = ( carBlockingMe == false ) && ( speedGain >= speedGainThreshold );
+
+
+  return changeLaneToTarget;
+
+
+}
+
 #endif  // HELPERS_H
